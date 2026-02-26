@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-runtime"
+version = "0.1.0"
+description = "Hybrid HFSM + behavior tree + event-sourced blackboard runtime for agentic systems"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agentic_runtime*"]
