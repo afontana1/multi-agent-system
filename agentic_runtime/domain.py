@@ -101,6 +101,65 @@ class AgentResult:
 
 
 @dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    tool_name: str
+    content: str
+    is_error: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ModelSettings:
+    provider: str
+    model: str
+    temperature: float = 0.2
+    max_tokens: Optional[int] = None
+    api_base: Optional[str] = None
+    api_key: Optional[str] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MCPServerConfig:
+    name: str
+    url: str
+    headers: Dict[str, str] = field(default_factory=dict)
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    name: str
+    model: ModelSettings
+    system_prompt: str
+    description: str = ""
+    selection_keywords: Tuple[str, ...] = ()
+    task_template: str = "Respond to the user query: {query}"
+    tools: Tuple[str, ...] = ()
+    mcp_servers: Tuple[str, ...] = ()
+    score_bias: float = 0.5
+    priority: int = 50
+    lane: str = "default"
+    max_tool_rounds: int = 4
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    agents: Tuple[AgentConfig, ...]
+    mcp_servers: Tuple[MCPServerConfig, ...] = ()
+    max_parallel: int = 3
+    interaction_mode: str = "general"
+
+
+@dataclass(frozen=True)
 class ValidationReport:
     ready_to_respond: bool
     missing_items: Tuple[str, ...] = ()

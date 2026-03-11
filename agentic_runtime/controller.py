@@ -157,10 +157,19 @@ class FailedState(IState):
 
 
 class HybridAgentRuntimeV2:
-    def __init__(self, planner: ITaskPlanner, validator: IValidator, synthesizer: ISynthesizer, registry: AgentRegistry, router: Optional[UtilityRouter] = None, retry_policy: Optional[IRetryPolicy] = None) -> None:
+    def __init__(
+        self,
+        planner: ITaskPlanner,
+        validator: IValidator,
+        synthesizer: ISynthesizer,
+        registry: AgentRegistry,
+        router: Optional[UtilityRouter] = None,
+        retry_policy: Optional[IRetryPolicy] = None,
+        max_parallel: int = 2,
+    ) -> None:
         self._router = router or UtilityRouter()
         self._retry = retry_policy or ExponentialBackoffRetryPolicy()
-        execution_service = ExecutionService(registry, self._router, self._retry)
+        execution_service = ExecutionService(registry, self._router, self._retry, max_parallel=max_parallel)
         self._hfsm = HFSM(
             states={
                 LifecycleState.INTAKE: IntakeState(),

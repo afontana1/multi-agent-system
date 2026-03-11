@@ -9,13 +9,14 @@ from .retry import IRetryPolicy
 
 
 class ExecutionService:
-    def __init__(self, registry: AgentRegistry, router: UtilityRouter, retry_policy: IRetryPolicy) -> None:
+    def __init__(self, registry: AgentRegistry, router: UtilityRouter, retry_policy: IRetryPolicy, max_parallel: int = 2) -> None:
         self._registry = registry
         self._router = router
         self._retry = retry_policy
+        self._max_parallel = max_parallel
 
     async def execute_ready_subtasks(self, bb: EventSourcedBlackboard, max_parallel: int = 2) -> Status:
-        ready = sorted(self._ready_subtasks(bb), key=lambda s: s.priority)[:max_parallel]
+        ready = sorted(self._ready_subtasks(bb), key=lambda s: s.priority)[: min(max_parallel, self._max_parallel)]
         if not ready:
             return Status.FAILURE
         results = await __import__('asyncio').gather(*(self._run_single_subtask(bb, s) for s in ready))

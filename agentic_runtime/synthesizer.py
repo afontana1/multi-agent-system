@@ -32,3 +32,14 @@ class MarkdownSynthesizer(ISynthesizer):
                 lines.append(f"- Unsupported: {item}")
         lines += ["", "### Event Count", f"- {len(bb.events)}"]
         return "\n".join(lines)
+
+
+class ResponseSynthesizer(ISynthesizer):
+    def synthesize(self, bb: EventSourcedBlackboard) -> str:
+        outputs = []
+        for task in sorted(bb.state.subtasks.values(), key=lambda item: item.priority):
+            if task.output and task.output.get("response"):
+                outputs.append(task.output["response"])
+        if outputs:
+            return "\n\n".join(outputs)
+        return MarkdownSynthesizer().synthesize(bb)
