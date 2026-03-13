@@ -21,7 +21,9 @@ class ConditionNode(BTNode):
     predicate: Any
 
     async def tick(self, bb: EventSourcedBlackboard) -> Status:
-        return Status.SUCCESS if self.predicate(bb) else Status.FAILURE
+        status = Status.SUCCESS if self.predicate(bb) else Status.FAILURE
+        bb.trace("bt_tick", node=self.name, node_type="condition", status=status.value)
+        return status
 
 
 @dataclass
@@ -31,7 +33,9 @@ class ActionNode(BTNode):
 
     async def tick(self, bb: EventSourcedBlackboard) -> Status:
         result = self.action(bb)
-        return await result if asyncio.iscoroutine(result) else result
+        status = await result if asyncio.iscoroutine(result) else result
+        bb.trace("bt_tick", node=self.name, node_type="action", status=status.value)
+        return status
 
 
 @dataclass
@@ -44,12 +48,15 @@ class SequenceNode(BTNode):
         while self._index < len(self.children):
             status = await self.children[self._index].tick(bb)
             if status == Status.RUNNING:
+                bb.trace("bt_tick", node=self.name, node_type="sequence", status=status.value, child_index=self._index)
                 return Status.RUNNING
             if status == Status.FAILURE:
                 self._index = 0
+                bb.trace("bt_tick", node=self.name, node_type="sequence", status=status.value)
                 return Status.FAILURE
             self._index += 1
         self._index = 0
+        bb.trace("bt_tick", node=self.name, node_type="sequence", status=Status.SUCCESS.value)
         return Status.SUCCESS
 
 
@@ -63,12 +70,15 @@ class SelectorNode(BTNode):
         while self._index < len(self.children):
             status = await self.children[self._index].tick(bb)
             if status == Status.RUNNING:
+                bb.trace("bt_tick", node=self.name, node_type="selector", status=status.value, child_index=self._index)
                 return Status.RUNNING
             if status == Status.SUCCESS:
                 self._index = 0
+                bb.trace("bt_tick", node=self.name, node_type="selector", status=status.value)
                 return Status.SUCCESS
             self._index += 1
         self._index = 0
+        bb.trace("bt_tick", node=self.name, node_type="selector", status=Status.FAILURE.value)
         return Status.FAILURE
 
 
@@ -81,10 +91,12 @@ class CooldownDecorator(BTNode):
 
     async def tick(self, bb: EventSourcedBlackboard) -> Status:
         if self._last_success_tick is not None and bb.state.tick_count - self._last_success_tick < self.cooldown_ticks:
+            bb.trace("bt_tick", node=self.name, node_type="cooldown", status=Status.FAILURE.value, reason="cooldown_active")
             return Status.FAILURE
         status = await self.child.tick(bb)
         if status == Status.SUCCESS:
             self._last_success_tick = bb.state.tick_count
+        bb.trace("bt_tick", node=self.name, node_type="cooldown", status=status.value)
         return status
 
 
@@ -97,5 +109,8 @@ class ParallelJoinNode(BTNode):
     async def tick(self, bb: EventSourcedBlackboard) -> Status:
         results = await asyncio.gather(*(child.tick(bb) for child in self.children))
         if self.require_all_success:
-            return Status.SUCCESS if all(r == Status.SUCCESS for r in results) else Status.FAILURE
-        return Status.SUCCESS if any(r == Status.SUCCESS for r in results) else Status.FAILURE
+            status = Status.SUCCESS if all(r == Status.SUCCESS for r in results) else Status.FAILURE
+        else:
+            status = Status.SUCCESS if any(r == Status.SUCCESS for r in results) else Status.FAILURE
+        bb.trace("bt_tick", node=self.name, node_type="parallel_join", status=status.value, child_results=[result.value for result in results])
+        return status

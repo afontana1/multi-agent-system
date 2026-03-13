@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .domain import AgentResult, Constraint, DomainEvent, EventType, Fact, LifecycleState, SubTask, ValidationReport
+
+if TYPE_CHECKING:
+    from .observability import RuntimeTraceLogger
 
 
 @dataclass(frozen=True)
@@ -234,10 +237,17 @@ class EventStore:
 
 
 class EventSourcedBlackboard:
-    def __init__(self, initial: Optional[BlackboardState] = None) -> None:
+    def __init__(
+        self,
+        initial: Optional[BlackboardState] = None,
+        observer: Optional["RuntimeTraceLogger"] = None,
+        trace_context: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self._state = initial or BlackboardState()
         self._store = EventStore()
         self._reducer = BlackboardReducer()
+        self._observer = observer
+        self._trace_context = dict(trace_context or {})
 
     @property
     def state(self) -> BlackboardState:
@@ -248,14 +258,41 @@ class EventSourcedBlackboard:
         return self._store.events
 
     def apply_patch(self, patch: BlackboardPatch) -> None:
+        self.trace(
+            "blackboard_patch",
+            patch=type(patch).__name__,
+            lifecycle_state=self._state.lifecycle_state.value,
+            tick_count=self._state.tick_count,
+        )
         events = list(patch.to_events(self._state))
         self._store.append(events)
         for event in events:
             self._state = self._reducer.apply(self._state, event)
+            self.trace(
+                "blackboard_event",
+                domain_event_type=event.type.value,
+                turn_index=event.turn_index,
+                lifecycle_state=self._state.lifecycle_state.value,
+                subtasks=_serialize_subtasks(self._state.subtasks),
+                agents_called=list(self._state.agents_called),
+            )
 
     def apply_event(self, event: DomainEvent) -> None:
         self._store.append([event])
         self._state = self._reducer.apply(self._state, event)
+        self.trace(
+            "blackboard_event",
+            domain_event_type=event.type.value,
+            turn_index=event.turn_index,
+            lifecycle_state=self._state.lifecycle_state.value,
+            subtasks=_serialize_subtasks(self._state.subtasks),
+            agents_called=list(self._state.agents_called),
+        )
+
+    def trace(self, event_type: str, **payload: Any) -> None:
+        if self._observer is None:
+            return
+        self._observer.log(event_type, **{**self._trace_context, **payload})
 
     def active_facts(self) -> Tuple[Fact, ...]:
         return tuple(f for f in self._state.facts if f.status == "active")
@@ -272,3 +309,36 @@ class EventSourcedBlackboard:
 
     def failed_subtasks(self) -> List[SubTask]:
         return [s for s in self._state.subtasks.values() if s.status == "failed"]
+
+    def task_status_snapshot(self) -> Dict[str, Tuple[Dict[str, Any], ...]]:
+        def serialize(tasks: List[SubTask]) -> Tuple[Dict[str, Any], ...]:
+            return tuple(
+                {
+                    "id": task.id,
+                    "description": task.description,
+                    "assigned_agent": task.assigned_agent,
+                    "status": task.status,
+                    "priority": task.priority,
+                }
+                for task in tasks
+            )
+
+        completed = [task for task in self._state.subtasks.values() if task.status == "done"]
+        return {
+            "pending": serialize(self.pending_subtasks()),
+            "running": serialize(self.running_subtasks()),
+            "completed": serialize(completed),
+            "failed": serialize(self.failed_subtasks()),
+        }
+
+
+def _serialize_subtasks(subtasks: Dict[str, SubTask]) -> Dict[str, Dict[str, Any]]:
+    return {
+        subtask_id: {
+            "description": subtask.description,
+            "assigned_agent": subtask.assigned_agent,
+            "status": subtask.status,
+            "priority": subtask.priority,
+        }
+        for subtask_id, subtask in subtasks.items()
+    }

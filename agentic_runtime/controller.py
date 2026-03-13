@@ -65,9 +65,19 @@ class PlanState(IState):
         return LifecycleState.PLAN
 
     async def on_update(self, bb: EventSourcedBlackboard) -> LifecycleState:
-        for subtask in self.planner.build_plan(bb):
+        if hasattr(self.planner, "async_build_plan"):
+            planned_subtasks = await self.planner.async_build_plan(bb)
+        else:
+            planned_subtasks = self.planner.build_plan(bb)
+        if not planned_subtasks and not bb.state.subtasks:
+            return LifecycleState.FAILED
+        added = False
+        for subtask in planned_subtasks:
             if subtask.id not in bb.state.subtasks:
                 bb.apply_patch(AddSubTaskPatch(subtask, bb.state.turn_index))
+                added = True
+        if not added and bb.state.subtasks and all(s.status == "done" for s in bb.state.subtasks.values()):
+            return LifecycleState.VALIDATE
         return LifecycleState.EXECUTE
 
 
@@ -82,9 +92,11 @@ class ExecuteState(IState):
     async def on_update(self, bb: EventSourcedBlackboard) -> LifecycleState:
         status = await self.execution_bt.tick(bb)
         if bb.state.subtasks and all(s.status == "done" for s in bb.state.subtasks.values()):
-            return LifecycleState.VALIDATE
+            return LifecycleState.PLAN
         if status == Status.FAILURE and bb.failed_subtasks():
             return LifecycleState.REPAIR
+        if status == Status.FAILURE and not bb.pending_subtasks() and not bb.running_subtasks():
+            return LifecycleState.PLAN
         return LifecycleState.EXECUTE
 
 

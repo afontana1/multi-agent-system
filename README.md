@@ -5,11 +5,14 @@ A modular multi-agent runtime with:
 - behavior trees for execution and repair
 - event-sourced blackboard with typed patches
 - configurable LiteLLM-backed agents
+- coordinator-driven replanning across multiple execution rounds
 - local tool execution and MCP server tools
+- pluggable memory, context, tool execution, finalization, planning, and routing policies
 - config-driven agent registration
 
 There is also a minimal HTTP FastMCP server at [mcp/README.md](C:\Users\ajfon\Documents\Classes\projects\multi-agent-system\mcp\README.md) for local or network MCP integration testing.
 For a terminal chat example, see [examples/README.md](C:\Users\ajfon\Documents\Classes\projects\multi-agent-system\examples\README.md).
+Architecture diagrams live in [docs/README.md](C:\Users\ajfon\Documents\Classes\projects\multi-agent-system\docs\README.md).
 
 ## Quick start
 
@@ -30,10 +33,16 @@ async def main():
                 {
                     "name": "assistant",
                     "system_prompt": "You answer user questions with tools when useful.",
+                    "capabilities": ["general_qa", "tool_usage"],
                     "tools": ["lookup_docs"],
                     "model": {"provider": "litellm", "model": "openai/gpt-4o-mini"},
                 }
             ]
+        },
+        coordinator_spec={
+            "name": "coordinator",
+            "system_prompt": "Plan the next subtasks as JSON using agent capabilities and task status.",
+            "model": {"provider": "litellm", "model": "openai/gpt-4o-mini"},
         },
         tool_registry=ToolRegistry(
             [

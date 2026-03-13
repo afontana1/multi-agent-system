@@ -27,6 +27,7 @@ def _agent_config_from_dict(data: Mapping[str, Any]) -> AgentConfig:
         model=_model_settings_from_dict(data["model"]),
         system_prompt=str(data["system_prompt"]),
         description=str(data.get("description", "")),
+        capabilities=tuple(_to_strs(data.get("capabilities", ()))),
         selection_keywords=tuple(_to_strs(data.get("selection_keywords", ()))),
         task_template=str(data.get("task_template", "Respond to the user query: {query}")),
         tools=tuple(_to_strs(data.get("tools", ()))),
@@ -35,6 +36,7 @@ def _agent_config_from_dict(data: Mapping[str, Any]) -> AgentConfig:
         priority=int(data.get("priority", 50)),
         lane=str(data.get("lane", "default")),
         max_tool_rounds=int(data.get("max_tool_rounds", 4)),
+        memory_window=int(data.get("memory_window", 8)),
         enabled=bool(data.get("enabled", True)),
     )
 

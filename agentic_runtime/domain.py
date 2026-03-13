@@ -116,6 +116,12 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
+class MemoryEntry:
+    role: str
+    content: str
+
+
+@dataclass(frozen=True)
 class ModelSettings:
     provider: str
     model: str
@@ -140,6 +146,7 @@ class AgentConfig:
     model: ModelSettings
     system_prompt: str
     description: str = ""
+    capabilities: Tuple[str, ...] = ()
     selection_keywords: Tuple[str, ...] = ()
     task_template: str = "Respond to the user query: {query}"
     tools: Tuple[str, ...] = ()
@@ -148,6 +155,7 @@ class AgentConfig:
     priority: int = 50
     lane: str = "default"
     max_tool_rounds: int = 4
+    memory_window: int = 8
     enabled: bool = True
 
 

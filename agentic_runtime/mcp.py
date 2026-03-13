@@ -20,6 +20,7 @@ class MCPHttpClient:
         self._config = config
         self._next_id = 0
         self._initialized = False
+        self._session_id: Optional[str] = None
 
     async def start(self) -> None:
         if self._initialized:
@@ -46,8 +47,14 @@ class MCPHttpClient:
         for item in content:
             if item.get("type") == "text":
                 text_chunks.append(item.get("text", ""))
+            elif "text" in item:
+                text_chunks.append(str(item.get("text", "")))
+            else:
+                text_chunks.append(json.dumps(item))
         if not text_chunks and "structuredContent" in payload:
             text_chunks.append(json.dumps(payload["structuredContent"]))
+        if not text_chunks:
+            text_chunks.append(json.dumps(payload))
         return ToolResult(
             tool_name=name,
             content="\n".join(text_chunks),
@@ -75,12 +82,18 @@ class MCPHttpClient:
         body = json.dumps(payload).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "application/json, text/event-stream",
             **self._config.headers,
         }
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
         req = request.Request(self._config.url, data=body, headers=headers, method="POST")
         try:
             with request.urlopen(req) as response:
+                session_id = response.headers.get("Mcp-Session-Id")
+                if session_id:
+                    self._session_id = session_id
+                content_type = response.headers.get("Content-Type", "")
                 raw = response.read()
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -89,7 +102,24 @@ class MCPHttpClient:
             raise MCPProtocolError(f"Could not reach MCP server '{self._config.name}' at {self._config.url}: {exc}") from exc
         if not expect_response or not raw:
             return {}
-        return json.loads(raw.decode("utf-8"))
+        text = raw.decode("utf-8")
+        if "text/event-stream" in content_type:
+            return _parse_sse_payload(text)
+        return json.loads(text)
+
+
+def _parse_sse_payload(payload: str) -> Dict[str, Any]:
+    data_lines = []
+    for line in payload.splitlines():
+        if line.startswith("data:"):
+            data_lines.append(line[5:].strip())
+    if not data_lines:
+        raise MCPProtocolError("MCP server returned an event-stream response with no data payload.")
+    combined = "\n".join(part for part in data_lines if part)
+    try:
+        return json.loads(combined)
+    except json.JSONDecodeError as exc:
+        raise MCPProtocolError(f"Failed to parse MCP event-stream payload: {combined}") from exc
 
 
 @dataclass
